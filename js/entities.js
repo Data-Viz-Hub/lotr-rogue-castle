@@ -97,6 +97,7 @@ class Enemy {
     this.attackTimer  = 0;
     this.hitFlash     = 0;
     this.blocked      = false;
+    this.phaseOffset  = Math.random() * Math.PI * 2;  // unique walk cycle offset
   }
 
   update(dt, heroes, castle) {

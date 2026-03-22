@@ -67,7 +67,8 @@ const Renderer = {
     this._drawWeaponProjectiles(ctx, state.weaponProjectiles);
     this._drawHeroProjectiles(ctx, state.projectiles);
     this._drawHeroes(ctx, state.heroes);
-    this._drawEnemies(ctx, state.enemies);
+    this._drawEnemies(ctx, state.enemies, state.time);
+    this._drawParticles(ctx, state.particles);
     this._drawOverlays(ctx, state);
   },
 
@@ -436,28 +437,363 @@ const Renderer = {
     this._drawHpBar(ctx, x, y - r - 8, 44, 5, hp / maxHp, '#3ab84e', '#c03030');
   },
 
-  // ─── Enemies ──────────────────────────────────────
-  _drawEnemies(ctx, enemies) {
-    for (const e of enemies) { if (e.alive) this._drawEnemy(ctx, e); }
+  // ─── Enemies (animated sprites) ───────────────────
+  _drawEnemies(ctx, enemies, time) {
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      if      (e.type === 'goblin') this._drawGoblin(ctx, e, time);
+      else if (e.type === 'orc')    this._drawOrc(ctx, e, time);
+      else                          this._drawUruk(ctx, e, time);
+      // HP bar above every enemy
+      const hbW = e.radius * 2 + 10;
+      this._drawHpBar(ctx, e.x, e.y - e.radius - 14, hbW, 5, e.hp / e.maxHp, '#8abf40', '#c03020');
+    }
   },
 
-  _drawEnemy(ctx, enemy) {
-    const { x, y, radius, color, strokeColor, hitFlash, hp, maxHp, blocked } = enemy;
-    ctx.shadowColor = hitFlash > 0 ? '#ffaa00' : strokeColor;
-    ctx.shadowBlur  = hitFlash > 0 ? 20 : 6;
-    ctx.fillStyle   = hitFlash > 0 ? '#ff9900' : color;
-    ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = hitFlash > 0 ? '#ffcc44' : strokeColor; ctx.lineWidth = 2; ctx.stroke();
-    ctx.shadowBlur  = 0;
-    ctx.font = `${Math.max(10, radius - 4)}px serif`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(enemy.emoji, x, y);
-    ctx.textBaseline = 'alphabetic';
-    if (blocked) {
-      ctx.fillStyle = '#ff4040';
-      ctx.beginPath(); ctx.arc(x + radius - 4, y - radius + 4, 4, 0, Math.PI * 2); ctx.fill();
+  // ── Goblin: small, fast, hunched, dagger ────────────
+  _drawGoblin(ctx, e, time) {
+    const fl  = e.hitFlash > 0;
+    const blk = e.blocked;
+    const ph  = time * 4.8 + e.phaseOffset;
+    const bob = blk ? Math.sin(time * 12) * 1.2 : Math.sin(ph) * 2.5;
+    const leg = blk ? 0 : Math.sin(ph) * 0.55;
+    const arm = blk ? 0 : Math.sin(ph + Math.PI) * 0.45;
+    const atk = blk ? Math.sin(time * 7.5) : 0;
+
+    const G = fl ? '#d05030' : '#4f8c22';
+    const D = fl ? '#a03018' : '#2e5010';
+    const L = fl ? '#e07050' : '#70b030';
+
+    ctx.save();
+    ctx.translate(e.x, e.y);
+    if (!blk) ctx.rotate(-0.1);   // forward lean
+
+    // Ground shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.beginPath(); ctx.ellipse(0, 15 - bob, 11, 3, 0, 0, Math.PI * 2); ctx.fill();
+
+    ctx.translate(0, bob);
+
+    // ── Legs ──
+    [[-5, leg], [4, -leg]].forEach(([tx, rot]) => {
+      ctx.save(); ctx.translate(tx, 5); ctx.rotate(rot);
+      ctx.fillStyle = D; ctx.fillRect(-2.5, 0, 5, 9);
+      ctx.fillStyle = fl ? '#701808' : '#1a3008';
+      ctx.beginPath(); ctx.ellipse(-0.5, 9, 5, 2.8, rot * 0.3, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    });
+
+    // ── Body ──
+    ctx.fillStyle = G;
+    ctx.beginPath(); ctx.ellipse(-1, -1, 9, 11, -0.1, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = L;
+    ctx.beginPath(); ctx.ellipse(-1, 1, 5, 6, 0, 0, Math.PI * 2); ctx.fill();
+    // Ribcage lines
+    if (!fl) {
+      ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 0.8;
+      for (let i = -1; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(-4, i*2.2-1); ctx.lineTo(3, i*2.2-1); ctx.stroke(); }
     }
-    this._drawHpBar(ctx, x, y - radius - 8, radius * 2 + 8, 4, hp / maxHp, '#8abf40', '#804020');
+
+    // ── Left arm + dagger ──
+    const lunge = blk ? Math.max(0, atk) * 9 : 0;
+    ctx.save();
+    ctx.translate(-9, -3); ctx.rotate(arm - 0.25 - (blk ? 0.45 : 0));
+    ctx.fillStyle = G; ctx.fillRect(-2.5, 0, 5, 8);
+    ctx.translate(0, 7 + lunge);
+    ctx.fillStyle = fl ? '#cc9040' : '#7a5020'; ctx.fillRect(-1.5, 0, 3, 4);   // handle
+    ctx.fillStyle = '#888'; ctx.fillRect(-3.5, 3, 7, 2);                        // guard
+    ctx.fillStyle = fl ? '#ffffff' : '#c8c8c8'; ctx.fillRect(-1, 5, 2, 9);      // blade
+    ctx.restore();
+
+    // ── Right arm ──
+    ctx.save();
+    ctx.translate(8, -3); ctx.rotate(-arm + 0.25);
+    ctx.fillStyle = G; ctx.fillRect(-2.5, 0, 5, 8);
+    ctx.restore();
+
+    // ── Head ──
+    ctx.fillStyle = fl ? '#d06040' : '#5aa02a';
+    ctx.beginPath(); ctx.ellipse(1, -11, 7.5, 7, 0.06, 0, Math.PI * 2); ctx.fill();
+
+    // Ears
+    ctx.fillStyle = D;
+    ctx.beginPath(); ctx.moveTo(-5.5,-11); ctx.lineTo(-13,-21); ctx.lineTo(-1.5,-15); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(7,-11);    ctx.lineTo(14, -21); ctx.lineTo(3,  -15); ctx.closePath(); ctx.fill();
+
+    // Eyes
+    if (!fl) {
+      ctx.fillStyle = '#eedd55';
+      ctx.beginPath(); ctx.ellipse(-2.5,-12.5, 3, 2.8, 0, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(4,  -12.5, 3, 2.8, 0, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#181208';
+      ctx.beginPath(); ctx.ellipse(-2.5,-12.5, 1, 2.2, 0, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(4,  -12.5, 1, 2.2, 0, 0, Math.PI*2); ctx.fill();
+    } else {
+      ctx.shadowColor = '#ffff00'; ctx.shadowBlur = 10;
+      ctx.fillStyle = '#ffff00';
+      ctx.beginPath(); ctx.arc(-2.5,-12.5, 3.5, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(4,  -12.5, 3.5, 0, Math.PI*2); ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    // Nose + fangs
+    ctx.fillStyle = D; ctx.beginPath(); ctx.arc(1, -9, 2, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#fffff0';
+    ctx.fillRect(-3, -6, 2, 3.5);
+    ctx.fillRect(1.5, -6, 2, 3.5);
+
+    ctx.restore();
+  },
+
+  // ── Orc: bulky, tusked, club ─────────────────────────
+  _drawOrc(ctx, e, time) {
+    const fl  = e.hitFlash > 0;
+    const blk = e.blocked;
+    const ph  = time * 3.2 + e.phaseOffset;
+    const bob = blk ? Math.sin(time * 8) * 1.5 : Math.sin(ph) * 3;
+    const leg = blk ? 0 : Math.sin(ph) * 0.42;
+    const arm = blk ? 0 : Math.sin(ph + Math.PI) * 0.38;
+    const atk = blk ? Math.sin(time * 5.5) : 0;
+
+    const O  = fl ? '#c04828' : '#4a7828';
+    const OD = fl ? '#8a2810' : '#2c4e14';
+    const OL = fl ? '#d87050' : '#6a9c30';
+
+    ctx.save();
+    ctx.translate(e.x, e.y);
+    if (!blk) ctx.rotate(-0.08);
+
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath(); ctx.ellipse(0, 22 - bob, 16, 4, 0, 0, Math.PI*2); ctx.fill();
+
+    ctx.translate(0, bob);
+
+    // ── Legs ──
+    [[-7, leg], [6, -leg]].forEach(([tx, rot]) => {
+      ctx.save(); ctx.translate(tx, 8); ctx.rotate(rot);
+      ctx.fillStyle = OD; ctx.fillRect(-4, 0, 7, 13);
+      // Knee plate
+      ctx.fillStyle = OL; ctx.fillRect(-5, 6, 11, 4);
+      // Boot
+      ctx.fillStyle = '#100808';
+      ctx.beginPath(); ctx.ellipse(-1, 13, 8, 4, rot*0.2, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    });
+
+    // ── Body ──
+    ctx.fillStyle = O;
+    ctx.beginPath(); ctx.ellipse(0, -2, 14, 15, -0.06, 0, Math.PI*2); ctx.fill();
+    // Leather chest straps
+    ctx.fillStyle = fl ? '#902010' : '#2a2810';
+    ctx.beginPath(); ctx.ellipse(0, -4, 9, 10, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = OL;
+    ctx.beginPath(); ctx.ellipse(0, 2, 5.5, 5.5, 0, 0, Math.PI*2); ctx.fill();
+    // Belt
+    ctx.fillStyle = fl ? '#802010' : '#181408';
+    ctx.fillRect(-9, 7, 18, 4);
+    ctx.fillStyle = '#888'; ctx.fillRect(-2, 6, 4, 5); // buckle
+
+    // ── Shoulders ──
+    ctx.fillStyle = OD;
+    ctx.beginPath(); ctx.arc(-13, -8, 7, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(13,  -8, 7, 0, Math.PI*2); ctx.fill();
+
+    // ── Right arm + club ──
+    const clubSwing = blk ? atk * 1.0 : arm;
+    ctx.save();
+    ctx.translate(13, -6); ctx.rotate(-clubSwing + 0.3);
+    ctx.fillStyle = O; ctx.fillRect(-4, 0, 8, 14);
+    ctx.fillStyle = OD; ctx.fillRect(-5, 10, 10, 6); // gauntlet
+    ctx.translate(0, 13);
+    // Club handle
+    ctx.fillStyle = fl ? '#aa7030' : '#7a5020'; ctx.fillRect(-3, 0, 6, 14);
+    // Club head
+    ctx.fillStyle = fl ? '#804010' : '#5a3810';
+    ctx.beginPath(); ctx.ellipse(0, 15, 9, 7, clubSwing*0.4, 0, Math.PI*2); ctx.fill();
+    // Spikes
+    if (!fl) {
+      ctx.fillStyle = '#909090';
+      [-8,0,8].forEach(ox => { ctx.save(); ctx.translate(ox, 13); ctx.rotate(ox*0.06); ctx.fillRect(-1.5, 0, 3, 6); ctx.restore(); });
+    }
+    ctx.restore();
+
+    // ── Left arm ──
+    ctx.save();
+    ctx.translate(-13, -6); ctx.rotate(arm - 0.3);
+    ctx.fillStyle = O; ctx.fillRect(-4, 0, 8, 14);
+    ctx.fillStyle = OD; ctx.fillRect(-5, 10, 10, 6);
+    ctx.restore();
+
+    // ── Head ──
+    ctx.fillStyle = fl ? '#c05030' : '#527828';
+    ctx.beginPath(); ctx.ellipse(0, -19, 12, 11, 0.04, 0, Math.PI*2); ctx.fill();
+    // Brow ridge
+    ctx.fillStyle = OD;
+    ctx.beginPath(); ctx.moveTo(-11,-22); ctx.quadraticCurveTo(0,-29, 11,-22); ctx.quadraticCurveTo(10,-20,-11,-20); ctx.closePath(); ctx.fill();
+
+    // Eyes
+    if (!fl) {
+      ctx.fillStyle = '#ee3300';
+      ctx.beginPath(); ctx.ellipse(-4,-21, 3.5, 2.5, 0.2, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(4, -21, 3.5, 2.5,-0.2, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#180800';
+      ctx.beginPath(); ctx.arc(-4,-21, 1.6, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(4, -21, 1.6, 0, Math.PI*2); ctx.fill();
+    } else {
+      ctx.shadowColor = '#ff8800'; ctx.shadowBlur = 14;
+      ctx.fillStyle = '#ff8800';
+      ctx.beginPath(); ctx.arc(-4,-21, 4.5, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(4, -21, 4.5, 0, Math.PI*2); ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    // Nose
+    ctx.fillStyle = OD; ctx.fillRect(-3.5,-16, 7, 5);
+    ctx.beginPath(); ctx.arc(-2,-13, 2.2, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(2, -13, 2.2, 0, Math.PI*2); ctx.fill();
+
+    // Tusks
+    ctx.fillStyle = fl ? '#eedd80' : '#ffffcc';
+    [[-5, -0.18],[5, 0.18]].forEach(([tx, rot]) => {
+      ctx.save(); ctx.translate(tx, -11); ctx.rotate(rot);
+      ctx.beginPath(); ctx.moveTo(-2,0); ctx.lineTo(2,0); ctx.lineTo(0.5,10); ctx.lineTo(-0.5,10); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    });
+
+    ctx.restore();
+  },
+
+  // ── Uruk-hai: armored, sword, white hand ─────────────
+  _drawUruk(ctx, e, time) {
+    const fl  = e.hitFlash > 0;
+    const blk = e.blocked;
+    const ph  = time * 2.2 + e.phaseOffset;
+    const bob = blk ? Math.sin(time * 6) * 1.5 : Math.sin(ph) * 3.5;
+    const leg = blk ? 0 : Math.sin(ph) * 0.28;
+    const arm = blk ? 0 : Math.sin(ph + Math.PI) * 0.24;
+    const atk = blk ? Math.sin(time * 4.5) : 0;
+
+    const AR  = fl ? '#b04030' : '#282828';
+    const ARL = fl ? '#c85040' : '#3a3a3a';
+    const ARD = fl ? '#802020' : '#141414';
+    const SK  = fl ? '#c05040' : '#3a3030';
+
+    ctx.save();
+    ctx.translate(e.x, e.y);
+
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath(); ctx.ellipse(0, 28 - bob, 20, 5, 0, 0, Math.PI*2); ctx.fill();
+
+    ctx.translate(0, bob);
+
+    // ── Legs (armored greaves) ──
+    [[-8, leg],[7, -leg]].forEach(([tx, rot]) => {
+      ctx.save(); ctx.translate(tx, 10); ctx.rotate(rot);
+      ctx.fillStyle = AR; ctx.fillRect(-5, 0, 9, 17);
+      ctx.fillStyle = ARL; ctx.fillRect(-6, 6, 12, 5);  // knee
+      ctx.fillStyle = '#080808';
+      ctx.beginPath(); ctx.ellipse(-1, 17, 9, 5, rot*0.15, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    });
+
+    // ── Torso / chest plate ──
+    ctx.fillStyle = AR;
+    ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(-15, -15, 30, 25, 3); else ctx.rect(-15,-15,30,25); ctx.fill();
+    ctx.fillStyle = ARL;
+    ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(-12, -13, 24, 19, 2); else ctx.rect(-12,-13,24,19); ctx.fill();
+    // Centre ridge
+    ctx.fillStyle = ARD; ctx.fillRect(-2.5,-14, 5, 20);
+    // Horizontal banding
+    ctx.strokeStyle = ARD; ctx.lineWidth = 1.5;
+    [-5, 0, 5].forEach(y => { ctx.beginPath(); ctx.moveTo(-12,y); ctx.lineTo(12,y); ctx.stroke(); });
+
+    // White hand of Saruman
+    if (!fl) {
+      ctx.shadowColor = 'rgba(255,255,220,0.6)'; ctx.shadowBlur = 6;
+      ctx.fillStyle = 'rgba(255,255,220,0.88)';
+      // Simplified hand: palm + 4 fingers drawn as small rects
+      ctx.fillRect(-4, -8, 8, 6);   // palm
+      [-5,-2,2,5].forEach(fx => { ctx.fillRect(fx-1, -14, 2, 6); }); // fingers
+      ctx.fillRect(-5, -7, 3, 4);   // thumb
+      ctx.shadowBlur = 0;
+    }
+
+    // ── Pauldrons (shoulder armour) ──
+    ctx.fillStyle = ARD;
+    ctx.beginPath(); ctx.ellipse(-16, -10, 9, 7, -0.3, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(16,  -10, 9, 7,  0.3, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = AR;
+    ctx.beginPath(); ctx.ellipse(-16,-10, 7, 5, -0.3, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(16, -10, 7, 5,  0.3, 0, Math.PI*2); ctx.fill();
+
+    // ── Right arm + sword ──
+    const raise = blk ? Math.max(0, atk) * 0.9 : 0;
+    ctx.save();
+    ctx.translate(15, -7); ctx.rotate(-arm + 0.2 - raise);
+    ctx.fillStyle = AR; ctx.fillRect(-4.5, 0, 9, 15);
+    ctx.fillStyle = ARD; ctx.fillRect(-5.5, 11, 11, 7); // gauntlet
+    ctx.translate(0, 15);
+    // Sword handle
+    ctx.fillStyle = '#604828'; ctx.fillRect(-2.5, 0, 5, 9);
+    // Pommel
+    ctx.fillStyle = '#aaaaaa'; ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI*2); ctx.fill();
+    // Guard
+    ctx.fillStyle = '#888'; ctx.fillRect(-10, 8, 20, 3);
+    // Blade
+    ctx.fillStyle = fl ? '#ffffff' : '#c8d4e0';
+    ctx.beginPath(); ctx.moveTo(-2.5,11); ctx.lineTo(2.5,11); ctx.lineTo(0.8,38); ctx.lineTo(-0.8,38); ctx.closePath(); ctx.fill();
+    // Blade fuller (centre ridge)
+    ctx.fillStyle = fl ? '#80c0ff' : 'rgba(255,255,255,0.35)'; ctx.fillRect(-0.8, 12, 1.6, 24);
+    ctx.restore();
+
+    // ── Left arm ──
+    ctx.save();
+    ctx.translate(-15, -7); ctx.rotate(arm - 0.2);
+    ctx.fillStyle = AR; ctx.fillRect(-4.5, 0, 9, 15);
+    ctx.fillStyle = ARD; ctx.fillRect(-5.5, 11, 11, 7);
+    ctx.restore();
+
+    // ── Helmet ──
+    ctx.fillStyle = AR;
+    ctx.beginPath(); ctx.arc(0, -24, 13, Math.PI, 0); ctx.fillRect(-13,-24, 26, 12); ctx.fill();
+    // Cheek guards
+    ctx.fillStyle = ARD;
+    ctx.fillRect(-14, -19, 6, 11);
+    ctx.fillRect(8,   -19, 6, 11);
+    // Nasal bar
+    ctx.fillStyle = ARL; ctx.fillRect(-2.5,-25, 5, 14);
+    // Visor slits (glowing red)
+    const visC = fl ? '#ff6600' : '#7a1500';
+    if (fl) { ctx.shadowColor = '#ff4400'; ctx.shadowBlur = 12; }
+    ctx.fillStyle = visC;
+    ctx.fillRect(-11,-24, 8, 3.5);
+    ctx.fillRect(3,  -24, 8, 3.5);
+    ctx.shadowBlur = 0;
+    // Helmet rim
+    ctx.strokeStyle = ARD; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(-14,-13); ctx.lineTo(14,-13); ctx.stroke();
+    // Top spike/crest
+    ctx.fillStyle = ARD;
+    ctx.beginPath(); ctx.moveTo(-3.5,-35); ctx.lineTo(3.5,-35); ctx.lineTo(1.5,-25); ctx.lineTo(-1.5,-25); ctx.closePath(); ctx.fill();
+
+    ctx.restore();
+  },
+
+  // ─── Death particles ──────────────────────────────
+  _drawParticles(ctx, particles) {
+    if (!particles || particles.length === 0) return;
+    for (const p of particles) {
+      if (p.life <= 0) continue;
+      const alpha = p.life / p.maxLife;
+      ctx.globalAlpha = alpha * 0.9;
+      ctx.shadowColor = p.color; ctx.shadowBlur = 8;
+      ctx.fillStyle   = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * (0.4 + alpha * 0.6), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+    ctx.globalAlpha = 1;
   },
 
   // ─── HP bar ───────────────────────────────────────

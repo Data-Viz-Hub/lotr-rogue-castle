@@ -37,6 +37,7 @@ class Game {
     this.projectiles         = [];
     this.weaponProjectiles   = [];
     this.castleWeapons       = [];
+    this.particles           = [];
     this.castle              = new Castle();
     this.gold                = CFG.STARTING_GOLD;
     this.time                = 0;
@@ -78,6 +79,7 @@ class Game {
       selectedHeroType:   this.selectedHeroType,
       placementCursor:    this.placementCursor,
       waveAnnounce:       this.waveAnnounce,
+      particles:          this.particles,
       time:               this.time,
     };
   }
@@ -121,6 +123,7 @@ class Game {
       if (!e.alive && !e._rewarded) {
         e._rewarded = true;
         if (!e.reachedCastle) {
+          this._spawnDeathParticles(e);
           this.gold += e.reward;
           this.killCount++;
           this.totalKills++;
@@ -128,6 +131,16 @@ class Game {
         }
       }
     }
+
+    // Particle physics
+    for (const p of this.particles) {
+      p.x  += p.vx * dt;
+      p.y  += p.vy * dt;
+      p.vy += 90 * dt;   // gravity
+      p.vx *= 0.90;
+      p.life -= dt;
+    }
+    this.particles = this.particles.filter(p => p.life > 0);
 
     // Prune dead entities
     this.enemies           = this.enemies.filter(e => e.alive);
@@ -177,6 +190,31 @@ class Game {
     document.getElementById('stat-scene').textContent  = this.sceneNum;
     document.getElementById('stat-hp').textContent     = 0;
     this._showScreen('defeat-screen');
+  }
+
+  // ─── Death particles ──────────────────────────────
+  _spawnDeathParticles(enemy) {
+    const palettes = {
+      goblin: ['#4a8c20','#6aac30','#90c040','#c8e840'],
+      orc:    ['#3a6020','#5a8030','#405020','#7aaa40'],
+      uruk:   ['#604040','#805060','#282828','#a06040'],
+    };
+    const cols = palettes[enemy.type] || ['#808080'];
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2 + Math.random() * 0.6;
+      const speed = 55 + Math.random() * 100;
+      const life  = 0.4 + Math.random() * 0.4;
+      this.particles.push({
+        x:       enemy.x + (Math.random() - 0.5) * enemy.radius,
+        y:       enemy.y + (Math.random() - 0.5) * enemy.radius,
+        vx:      Math.cos(angle) * speed,
+        vy:      Math.sin(angle) * speed - 30,
+        life,
+        maxLife: life,
+        color:   cols[Math.floor(Math.random() * cols.length)],
+        r:       enemy.radius * 0.2 + Math.random() * 4,
+      });
+    }
   }
 
   // ─── Hero placement ───────────────────────────────
