@@ -68,6 +68,26 @@
       <div id="canvas-wrap">
         <canvas id="game-canvas"></canvas>
         <div id="toast-msg" class="toast hidden"></div>
+
+        <!-- Upgrade panel — appears over castle when a weapon is clicked -->
+        <div id="upgrade-panel" class="hidden">
+          <div class="upg-header">
+            <span id="upg-emoji" class="upg-icon"></span>
+            <div class="upg-title-block">
+              <div id="upg-name" class="upg-name"></div>
+              <div id="upg-level" class="upg-level"></div>
+            </div>
+            <button class="upg-close" id="upg-close">✕</button>
+          </div>
+          <div class="upg-stats">
+            <div class="upg-stat-item">DMG <span id="upg-dmg" class="upg-val"></span></div>
+            <div class="upg-stat-item">RATE <span id="upg-spd" class="upg-val"></span></div>
+          </div>
+          <div id="upg-action">
+            <button id="upg-btn" class="btn-upgrade"></button>
+          </div>
+          <div id="upg-maxed" class="upg-maxed hidden">⚔ Max Level</div>
+        </div>
       </div>
 
       <div id="hero-panel">

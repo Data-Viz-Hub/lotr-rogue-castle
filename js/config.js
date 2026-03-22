@@ -9,31 +9,37 @@ const CFG = {
   CANVAS_W: 900,
   CANVAS_H: 480,
 
-  COLS: 9,           // hero placement columns
-  ROWS: 3,           // lanes
-  CELL_W: 76,        // cell width in px
-  CELL_H: 110,       // cell height (lane height) in px
+  COLS: 9,            // hero placement columns
+  ROWS: 3,            // lanes
+  CELL_W: 80,         // cell width in px  (900-180)/9 = 80
+  CELL_H: 110,        // lane height in px
 
-  GRID_X: 20,        // x where grid starts
-  GRID_Y: 75,        // y of first lane top
+  CASTLE_W: 180,      // castle occupies x: 0 → 180
+  GRID_X:   180,      // hero grid starts here
+  GRID_Y:   75,       // top of first lane
 
-  CASTLE_X: 700,     // x where castle starts  (20 + 9*76 = 704 ≈ 700)
-  CASTLE_W: 200,
+  SPAWN_X: 960,       // enemies spawn at right edge
 
-  SPAWN_X: -60,      // enemies spawn here
+  CASTLE_MAX_HP:  200,
+  STARTING_GOLD:  150,
 
-  CASTLE_MAX_HP: 200,
-  STARTING_GOLD: 150,
-
-  WAVE_GAP: 7,       // seconds between waves
-  FIRST_WAVE_DELAY: 3, // countdown before wave 1
+  WAVE_GAP:         7,   // seconds between waves
+  FIRST_WAVE_DELAY: 3,   // countdown before wave 1
 };
 
-// Lane y-centers
+// Lane y-centers (same for left or right layout)
 CFG.LANE_Y = [
-  CFG.GRID_Y + CFG.CELL_H * 0 + CFG.CELL_H / 2,  // 75 + 55 = 130
-  CFG.GRID_Y + CFG.CELL_H * 1 + CFG.CELL_H / 2,  // 75+110+55 = 240
-  CFG.GRID_Y + CFG.CELL_H * 2 + CFG.CELL_H / 2,  // 75+220+55 = 350
+  CFG.GRID_Y + CFG.CELL_H * 0 + CFG.CELL_H / 2,  // 130
+  CFG.GRID_Y + CFG.CELL_H * 1 + CFG.CELL_H / 2,  // 240
+  CFG.GRID_Y + CFG.CELL_H * 2 + CFG.CELL_H / 2,  // 350
+];
+
+// ─── Castle weapon slots (on the right face of the castle) ─
+CFG.WEAPON_SLOTS = [
+  { id: 0, weaponType: 'catapult',     x: 162, y: 95,  r: 26 },
+  { id: 1, weaponType: 'fire_machine', x: 162, y: 200, r: 22 },
+  { id: 2, weaponType: 'fire_machine', x: 162, y: 300, r: 22 },
+  { id: 3, weaponType: 'catapult',     x: 162, y: 405, r: 26 },
 ];
 
 // ─── Heroes ─────────────────────────────────────────
@@ -46,7 +52,7 @@ const HEROES = {
     hp: 70,
     damage: 18,
     range: 220,
-    attackSpeed: 1.4,  // attacks / second
+    attackSpeed: 1.4,
     projSpeed: 350,
     color: '#3a7a3a',
     strokeColor: '#5ab55a',
@@ -61,7 +67,7 @@ const HEROES = {
     damage: 28,
     range: 65,
     attackSpeed: 0.9,
-    projSpeed: 0,      // melee — instant
+    projSpeed: 0,       // melee — instant
     color: '#3a5aaa',
     strokeColor: '#6080d0',
     desc: 'Melee · Tanky\nDmg 28 · HP 140',
@@ -88,8 +94,8 @@ const ENEMIES = {
     name: 'Goblin',
     emoji: '👺',
     hp: 45,
-    damage: 10,       // damage dealt to blocking hero per attack
-    speed: 65,        // px / second
+    damage: 10,
+    speed: 65,
     attackSpeed: 1.2,
     reward: 10,
     castleDamage: 25,
@@ -125,8 +131,45 @@ const ENEMIES = {
   },
 };
 
+// ─── Castle weapons ──────────────────────────────────
+const CASTLE_WEAPONS = {
+  catapult: {
+    name: 'Catapult',
+    emoji: '⚙',
+    cost: 120,
+    baseDamage:      55,
+    baseAttackSpeed: 0.35,
+    projSpeed: 180,   // lower = slower arc
+    aoeRadius: 40,
+    color: '#8a6020',
+    strokeColor: '#c09040',
+    upgrades: [
+      { label: 'Heavier Stones',  cost: 80,  damageBonus: 20, speedBonus: 0 },
+      { label: 'Faster Winch',    cost: 100, damageBonus: 0,  speedBonus: 0.15 },
+      { label: 'Burning Rocks',   cost: 140, damageBonus: 30, speedBonus: 0 },
+      { label: 'War Machine',     cost: 180, damageBonus: 0,  speedBonus: 0.20 },
+    ],
+  },
+  fire_machine: {
+    name: 'Fire Cannon',
+    emoji: '🔥',
+    cost: 100,
+    baseDamage:      22,
+    baseAttackSpeed: 1.1,
+    projSpeed: 300,
+    aoeRadius: 0,
+    color: '#a03010',
+    strokeColor: '#e05020',
+    upgrades: [
+      { label: 'Hotter Fuel',     cost: 70,  damageBonus: 10, speedBonus: 0 },
+      { label: 'Rapid Fire',      cost: 90,  damageBonus: 0,  speedBonus: 0.35 },
+      { label: 'Inferno Oil',     cost: 120, damageBonus: 15, speedBonus: 0 },
+      { label: 'Hellblast',       cost: 160, damageBonus: 0,  speedBonus: 0.40 },
+    ],
+  },
+};
+
 // ─── Chapter / Scene data ────────────────────────────
-// Each wave entry: { type, count, interval (seconds between spawns), lane (null = random) }
 const CHAPTERS = [
   {
     id: 1,

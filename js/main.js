@@ -47,6 +47,10 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('retry-victory-btn')
     .addEventListener('click', startGame);
 
+  // Upgrade panel close button
+  document.getElementById('upg-close')
+    .addEventListener('click', () => game && game._closeUpgradePanel());
+
   // Resize handling
   window.addEventListener('resize', () => {
     if (!game) return;
