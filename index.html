@@ -39,7 +39,7 @@
 
       <div id="game-header">
         <div class="header-section header-left">
-          <div class="header-chapter">Chapter I · Scene 1</div>
+          <div class="header-chapter">Chapter I · Scene <span id="header-scene-num">1</span></div>
           <div class="header-scene">Goblin Raid at Weathertop</div>
         </div>
 
@@ -60,7 +60,7 @@
           </div>
           <div class="stat-block gold-block">
             <span class="stat-icon">⚜</span>
-            <span id="gold-amount" class="stat-text gold-text">150</span>
+            <span id="gold-amount" class="stat-text gold-text">300</span>
           </div>
         </div>
       </div>
@@ -93,7 +93,7 @@
       <div id="hero-panel">
         <div class="panel-title">Deploy Heroes</div>
         <div id="hero-cards"></div>
-        <div class="panel-hint">Select a hero → click a lane cell to deploy · Right-click to cancel</div>
+        <div class="panel-hint">Select a hero → click lane cell or castle slot (🛡) · Right-click to cancel</div>
       </div>
 
     </div>
@@ -131,6 +131,20 @@
         <div class="result-icon">💀</div>
         <h2 class="result-title defeat-title">The Castle Has Fallen</h2>
         <p class="result-subtitle">The darkness prevails… but hope is not yet extinguished.</p>
+        <div class="result-stats">
+          <div class="result-stat">
+            <span class="rs-label">Scenes Survived</span>
+            <span id="stat-scene" class="rs-value">1</span>
+          </div>
+          <div class="result-stat">
+            <span class="rs-label">Total Kills</span>
+            <span id="stat-kills" class="rs-value">0</span>
+          </div>
+          <div class="result-stat">
+            <span class="rs-label">Castle HP</span>
+            <span id="stat-hp" class="rs-value">0</span>
+          </div>
+        </div>
         <button id="retry-btn" class="btn-secondary">Try Again</button>
       </div>
     </div>

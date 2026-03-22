@@ -5,14 +5,25 @@
 'use strict';
 
 // ─── Hero ────────────────────────────────────────────
+// Can be placed on the grid lane OR on a castle slot (onCastle=true).
+// Castle-slot heroes shoot from fixed wall positions and do NOT block enemies.
 class Hero {
-  constructor(col, lane, type) {
+  constructor(col, lane, type, castleSlot = null) {
     const cfg = HEROES[type];
     this.type        = type;
-    this.col         = col;
-    this.lane        = lane;
-    this.x           = CFG.GRID_X + col * CFG.CELL_W + CFG.CELL_W / 2;
-    this.y           = CFG.LANE_Y[lane];
+    this.onCastle    = castleSlot !== null;
+    this.castleSlotId = castleSlot ? castleSlot.id : null;
+    this.col         = this.onCastle ? null : col;
+    this.lane        = this.onCastle ? null : lane;
+
+    if (this.onCastle) {
+      this.x = castleSlot.x;
+      this.y = castleSlot.y;
+    } else {
+      this.x = CFG.GRID_X + col * CFG.CELL_W + CFG.CELL_W / 2;
+      this.y = CFG.LANE_Y[lane];
+    }
+
     this.hp          = cfg.hp;
     this.maxHp       = cfg.hp;
     this.damage      = cfg.damage;
@@ -33,11 +44,15 @@ class Hero {
     if (this.hitFlash > 0)    this.hitFlash    -= dt;
     if (this.attackTimer > 0) return;
 
-    // Nearest enemy in same lane within range
+    // Castle heroes: attack nearest enemy regardless of lane
+    // Grid heroes: attack nearest enemy in same lane within range
     let best = null, bestDist = Infinity;
     for (const e of enemies) {
-      if (!e.alive || e.lane !== this.lane) continue;
-      const dist = Math.abs(e.x - this.x);
+      if (!e.alive) continue;
+      if (!this.onCastle && e.lane !== this.lane) continue;
+      const dist = this.onCastle
+        ? Math.sqrt((e.x - this.x) ** 2 + (e.y - this.y) ** 2)
+        : Math.abs(e.x - this.x);
       if (dist <= this.range && dist < bestDist) { best = e; bestDist = dist; }
     }
     if (!best) return;
@@ -57,7 +72,7 @@ class Hero {
   }
 }
 
-// ─── Enemy (walks LEFT — from SPAWN_X toward castle on left) ─
+// ─── Enemy (walks LEFT, single lane = 0) ─────────────
 class Enemy {
   constructor(lane, type) {
     const cfg = ENEMIES[type];
@@ -99,25 +114,21 @@ class Enemy {
       }
     } else {
       this.blocked = false;
-      this.x -= this.speed * dt;  // walk LEFT
+      this.x -= this.speed * dt;   // walk LEFT
 
-      // Reached castle right face
       if (this.x - this.radius <= CFG.CASTLE_W) {
         castle.takeDamage(this.castleDamage);
-        this.alive = false;
+        this.alive         = false;
         this.reachedCastle = true;
       }
     }
   }
 
-  // Enemy approaches from the right; hero is to its left
+  // Castle-slot heroes are on the wall — enemies cannot reach them, skip.
   _findBlocker(heroes) {
     for (const h of heroes) {
-      if (!h.alive || h.lane !== this.lane) continue;
-      // Enemy left-edge overlaps hero right-area
-      if (this.x - this.radius <= h.x + 28 && this.x > h.x - 28) {
-        return h;
-      }
+      if (!h.alive || h.onCastle || h.lane !== this.lane) continue;
+      if (this.x - this.radius <= h.x + 28 && this.x > h.x - 28) return h;
     }
     return null;
   }
@@ -129,7 +140,7 @@ class Enemy {
   }
 }
 
-// ─── Hero projectile (straight-line) ─────────────────
+// ─── Hero projectile (straight) ───────────────────────
 class HeroShot {
   constructor(sx, sy, target, damage, heroType) {
     this.x        = sx;
@@ -139,13 +150,9 @@ class HeroShot {
     this.speed    = HEROES[heroType].projSpeed;
     this.alive    = true;
     this.isHeroShot = true;
-    if (heroType === 'mage') {
-      this.color = '#c060ff'; this.radius = 5;
-    } else if (heroType === 'archer') {
-      this.color = '#f0b030'; this.radius = 3;
-    } else {
-      this.color = '#8090c0'; this.radius = 4;
-    }
+    if      (heroType === 'mage')     { this.color = '#c060ff'; this.radius = 5; }
+    else if (heroType === 'archer')   { this.color = '#f0b030'; this.radius = 3; }
+    else                              { this.color = '#8090c0'; this.radius = 4; }
   }
 
   update(dt) {
@@ -162,54 +169,41 @@ class HeroShot {
 // ─── Catapult shot (parabolic arc, AoE on landing) ───
 class CatapultShot {
   constructor(sx, sy, target, damage, aoeRadius) {
-    this.sx       = sx;
-    this.sy       = sy;
-    this.target   = target;
-    this.damage   = damage;
-    this.aoeRadius= aoeRadius;
-    this.progress = 0;
-    this.duration = 1.6;      // seconds to reach target
-    this.arcHeight= 90;       // peak arc height above the baseline
-    this.x        = sx;
-    this.y        = sy;
-    this.alive    = true;
+    this.sx        = sx;  this.sy = sy;
+    this.target    = target;
+    this.damage    = damage;
+    this.aoeRadius = aoeRadius;
+    this.progress  = 0;
+    this.duration  = 1.6;
+    this.arcHeight = 85;
+    this.x         = sx;  this.y = sy;
+    this.tx        = target.x;  this.ty = target.y;
+    this.alive     = true;
     this.isCatapult = true;
-    // Snapshot target position at launch (so it tracks in-flight)
-    this.tx = target.x;
-    this.ty = target.y;
   }
 
   update(dt, enemies) {
     if (!this.alive) return;
-
-    // Track target while alive
     if (this.target.alive) { this.tx = this.target.x; this.ty = this.target.y; }
-
     this.progress += dt / this.duration;
     const t = Math.min(this.progress, 1);
-
     this.x = this.sx + (this.tx - this.sx) * t;
     this.y = this.sy + (this.ty - this.sy) * t - 4 * this.arcHeight * t * (1 - t);
-
     if (t >= 1) {
-      // AoE impact
       for (const e of enemies) {
         if (!e.alive) continue;
         const dx = e.x - this.tx, dy = e.y - this.ty;
-        if (Math.sqrt(dx * dx + dy * dy) <= this.aoeRadius) {
-          e.takeDamage(this.damage);
-        }
+        if (Math.sqrt(dx * dx + dy * dy) <= this.aoeRadius) e.takeDamage(this.damage);
       }
       this.alive = false;
     }
   }
 }
 
-// ─── Fire cannon shot (straight, single target) ───────
+// ─── Fire cannon shot (straight, single-target) ───────
 class FireShot {
   constructor(sx, sy, target, damage, speed) {
-    this.x      = sx;
-    this.y      = sy;
+    this.x      = sx;  this.y = sy;
     this.target = target;
     this.damage = damage;
     this.speed  = speed;
@@ -228,7 +222,7 @@ class FireShot {
   }
 }
 
-// ─── Castle weapon (catapult or fire_machine) ─────────
+// ─── Castle weapon ────────────────────────────────────
 class CastleWeapon {
   constructor(slotId) {
     const slot       = CFG.WEAPON_SLOTS[slotId];
@@ -242,17 +236,17 @@ class CastleWeapon {
     this.attackSpeed = cfg.baseAttackSpeed;
     this.projSpeed   = cfg.projSpeed;
     this.aoeRadius   = cfg.aoeRadius;
-    this.range       = 700;     // covers whole battlefield
+    this.range       = 750;
     this.attackTimer = 0;
-    this.upgradeLevel= 0;       // 0 = base purchased, upgrades add to this
+    this.upgradeLevel= 0;
     this.alive       = true;
   }
 
-  get cfg()           { return CASTLE_WEAPONS[this.type]; }
-  get maxUpgrades()   { return this.cfg.upgrades.length; }
-  get isMaxLevel()    { return this.upgradeLevel >= this.maxUpgrades; }
-  get nextUpgrade()   { return this.isMaxLevel ? null : this.cfg.upgrades[this.upgradeLevel]; }
-  get level()         { return this.upgradeLevel + 1; }
+  get cfg()          { return CASTLE_WEAPONS[this.type]; }
+  get maxUpgrades()  { return this.cfg.upgrades.length; }
+  get isMaxLevel()   { return this.upgradeLevel >= this.maxUpgrades; }
+  get nextUpgrade()  { return this.isMaxLevel ? null : this.cfg.upgrades[this.upgradeLevel]; }
+  get level()        { return this.upgradeLevel + 1; }
 
   applyUpgrade() {
     const up = this.nextUpgrade;
@@ -264,8 +258,6 @@ class CastleWeapon {
 
   update(dt, enemies, weaponProjectiles) {
     if (this.attackTimer > 0) { this.attackTimer -= dt; return; }
-
-    // Find nearest enemy anywhere on the field
     let best = null, bestDist = Infinity;
     for (const e of enemies) {
       if (!e.alive) continue;
@@ -274,22 +266,16 @@ class CastleWeapon {
       if (dist < bestDist) { best = e; bestDist = dist; }
     }
     if (!best) return;
-
     this.attackTimer = 1 / this.attackSpeed;
-
     if (this.type === 'catapult') {
-      weaponProjectiles.push(
-        new CatapultShot(this.x, this.y, best, this.damage, this.aoeRadius)
-      );
+      weaponProjectiles.push(new CatapultShot(this.x, this.y, best, this.damage, this.aoeRadius));
     } else {
-      weaponProjectiles.push(
-        new FireShot(this.x, this.y, best, this.damage, this.projSpeed)
-      );
+      weaponProjectiles.push(new FireShot(this.x, this.y, best, this.damage, this.projSpeed));
     }
   }
 }
 
-// ─── Castle ──────────────────────────────────────────
+// ─── Castle ───────────────────────────────────────────
 class Castle {
   constructor() {
     this.maxHp    = CFG.CASTLE_MAX_HP;
@@ -314,7 +300,6 @@ class WaveManager {
     this.spawnTimer     = 0;
     this.countdownTimer = CFG.FIRST_WAVE_DELAY;
     this.inCountdown    = true;
-    this.allSpawned     = false;
     this.complete       = false;
   }
 
@@ -327,10 +312,7 @@ class WaveManager {
 
     if (this.inCountdown) {
       this.countdownTimer -= dt;
-      if (this.countdownTimer <= 0) {
-        this.inCountdown = false;
-        this._startNextWave();
-      }
+      if (this.countdownTimer <= 0) { this.inCountdown = false; this._startNextWave(); }
       return [];
     }
 
@@ -343,8 +325,7 @@ class WaveManager {
 
     if (this.spawnQueue.length === 0 && liveEnemies === 0) {
       if (this.waveIndex >= this.waves.length - 1) {
-        this.allSpawned = true;
-        this.complete   = true;
+        this.complete = true;
       } else {
         this.inCountdown    = true;
         this.countdownTimer = CFG.WAVE_GAP;
@@ -355,15 +336,13 @@ class WaveManager {
 
   _startNextWave() {
     this.waveIndex++;
-    if (this.waveIndex >= this.waves.length) {
-      this.allSpawned = true; this.complete = true; return;
-    }
+    if (this.waveIndex >= this.waves.length) { this.complete = true; return; }
     this.spawnTimer = 0;
     this.spawnQueue = [];
     let cursor      = 0;
     for (const group of this.waves[this.waveIndex].enemies) {
       for (let i = 0; i < group.count; i++) {
-        const lane = (group.lane != null) ? group.lane : Math.floor(Math.random() * CFG.ROWS);
+        const lane = group.lane != null ? group.lane : 0; // single lane = 0
         this.spawnQueue.push({ time: cursor, type: group.type, lane });
         cursor += group.interval;
       }
